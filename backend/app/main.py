@@ -1,26 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.models.asset import Asset
+from app.schemas.asset import AssetRead
 
 app = FastAPI(title="Enersync API", version="0.1.0")
-
-# Temporary fictional data. The database replaces this list in the next stage.
-ASSETS = [
-    {
-        "asset_id": 1,
-        "asset_tag": "ENS-PH-GEN-001",
-        "name": "Caterpillar 500kVA Generator",
-        "category": "Power Systems",
-        "status": "Operational",
-        "current_location": "Port Harcourt Hub",
-    },
-    {
-        "asset_id": 2,
-        "asset_tag": "ENS-ABJ-FLEET-12",
-        "name": "Toyota Hilux 4x4 Escort",
-        "category": "Logistics Fleet",
-        "status": "MaintenanceRequired",
-        "current_location": "Abuja HQ",
-    },
-]
 
 
 @app.get("/health")
@@ -28,14 +14,14 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/api/assets")
-def list_assets():
-    return ASSETS
+@app.get("/api/assets", response_model=list[AssetRead])
+def list_assets(db: Session = Depends(get_db)):
+    return db.scalars(select(Asset).order_by(Asset.asset_id)).all()
 
 
-@app.get("/api/assets/{asset_id}")
-def get_asset(asset_id: int):
-    for asset in ASSETS:
-        if asset["asset_id"] == asset_id:
-            return asset
-    raise HTTPException(status_code=404, detail="Asset not found")
+@app.get("/api/assets/{asset_id}", response_model=AssetRead)
+def get_asset(asset_id: int, db: Session = Depends(get_db)):
+    asset = db.get(Asset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return asset
