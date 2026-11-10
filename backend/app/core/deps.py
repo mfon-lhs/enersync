@@ -25,3 +25,14 @@ def get_current_user(
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="Your login is invalid or has expired")
     return user
+
+
+def require_roles(*allowed_roles: str):
+    """Return a check that lets in only users whose role is in allowed_roles."""
+
+    def check_role(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Your role is not allowed to do this")
+        return current_user
+
+    return check_role
