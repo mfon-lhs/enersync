@@ -1,5 +1,5 @@
 from fastapi import Depends, FastAPI, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,7 @@ from app.models.asset import Asset
 from app.models.audit_log import AuditLog
 from app.models.logistics_request import LogisticsRequest
 from app.models.user import User
-from app.schemas.asset import AssetCreate, AssetRead, AssetUpdate
+from app.schemas.asset import AssetCreate, AssetRead, AssetSummary, AssetUpdate
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.logistics_request import RequestCreate, RequestRead, RequestUpdate
 
@@ -46,6 +46,17 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
 
 # ---------- Assets ----------
+
+
+# This route must stay above /api/assets/{asset_id}, or FastAPI reads "summary" as an asset id
+@app.get("/api/assets/summary", response_model=AssetSummary, dependencies=[Depends(get_current_user)])
+def assets_summary(db: Session = Depends(get_db)):
+    # Start every status at 0, so statuses with no assets still appear in the answer
+    counts = {status: 0 for status in ["Operational", "MaintenanceRequired", "Decommissioned", "InTransit"]}
+    rows = db.execute(select(Asset.status, func.count()).group_by(Asset.status)).all()
+    for status, count in rows:
+        counts[status] = count
+    return AssetSummary(total=sum(counts.values()), by_status=counts)
 
 
 @app.get("/api/assets", response_model=list[AssetRead], dependencies=[Depends(get_current_user)])

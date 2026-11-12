@@ -45,3 +45,11 @@ class AssetUpdate(BaseModel):
         if value is None:
             raise ValueError("This field cannot be empty")
         return value
+
+
+
+class AssetSummary(BaseModel):
+    """The number of assets in total, and how many are in each status."""
+
+    total: int
+    by_status: dict[str, int]
