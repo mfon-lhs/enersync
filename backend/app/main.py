@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.models.asset import Asset
 from app.models.audit_log import AuditLog
 from app.models.logistics_request import LogisticsRequest
@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.asset import AssetCreate, AssetRead, AssetSummary, AssetUpdate
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.logistics_request import RequestCreate, RequestRead, RequestUpdate
+from app.schemas.user import UserCreate, UserRead, UserUpdate
 
 app = FastAPI(title="Enersync API", version="0.1.0")
 
@@ -230,3 +231,101 @@ def update_request_status(
     db.commit()
     db.refresh(logistics_request)
     return logistics_request
+
+
+# ---------- Users (SuperAdmin only) ----------
+
+
+@app.get("/api/users", response_model=list[UserRead], dependencies=[Depends(require_roles("SuperAdmin"))])
+def list_users(db: Session = Depends(get_db)):
+    return db.scalars(select(User).order_by(User.user_id)).all()
+
+
+@app.post("/api/users", response_model=UserRead, status_code=201)
+def create_user(
+    data: UserCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("SuperAdmin")),
+):
+    user = User(
+        first_name=data.first_name,
+        last_name=data.last_name,
+        email=data.email,
+        # Only the bcrypt hash is stored, never the password itself
+        password_hash=hash_password(data.password),
+        role=data.role,
+        is_active=True,
+        location=data.location,
+    )
+    db.add(user)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A user with this email already exists")
+
+    db.add(
+        AuditLog(
+            user_id=current_user.user_id,
+            action_type="USER_CREATED",
+            table_name="users",
+            record_id=user.user_id,
+            old_value=None,
+            new_value=UserRead.model_validate(user).model_dump(mode="json"),
+            ip_address=request.client.host if request.client else None,
+        )
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.patch("/api/users/{user_id}", response_model=UserRead)
+def update_user(
+    user_id: int,
+    data: UserUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("SuperAdmin")),
+):
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Only the fields the user actually sent are changed
+    changes = data.model_dump(exclude_unset=True)
+    if not changes:
+        return user
+
+    # A SuperAdmin cannot remove their own access, so the last admin cannot lock everyone out
+    if user.user_id == current_user.user_id:
+        removes_own_admin = changes.get("role", "SuperAdmin") != "SuperAdmin"
+        deactivates_self = changes.get("is_active", True) is False
+        if removes_own_admin or deactivates_self:
+            raise HTTPException(
+                status_code=409,
+                detail="You cannot change your own role or deactivate your own account",
+            )
+
+    old_value = UserRead.model_validate(user).model_dump(mode="json")
+    for field, value in changes.items():
+        setattr(user, field, value)
+    db.flush()  # sends the change now, so the database updates updated_at
+    db.refresh(user)
+    new_value = UserRead.model_validate(user).model_dump(mode="json")
+
+    db.add(
+        AuditLog(
+            user_id=current_user.user_id,
+            action_type="USER_UPDATED",
+            table_name="users",
+            record_id=user_id,
+            old_value=old_value,
+            new_value=new_value,
+            ip_address=request.client.host if request.client else None,
+        )
+    )
+    db.commit()
+    db.refresh(user)
+    return user
