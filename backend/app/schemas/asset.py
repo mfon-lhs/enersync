@@ -47,7 +47,6 @@ class AssetUpdate(BaseModel):
         return value
 
 
-
 class AssetSummary(BaseModel):
     """The number of assets in total, and how many are in each status."""
 

@@ -30,6 +30,4 @@ class Asset(Base):
     current_location: Mapped[str] = mapped_column(String(100))
     last_inspected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The database fills in created_at itself when we don't provide a value
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

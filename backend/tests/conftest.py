@@ -63,6 +63,7 @@ def make_user():
 
     return _make_user
 
+
 @pytest.fixture
 def auth_headers(client, make_user):
     # Creates a user with the given role, logs in, and returns the header that proves who they are

@@ -31,9 +31,5 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     location: Mapped[str] = mapped_column(String(100))
     # The database fills in these two timestamps when we don't provide values
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
