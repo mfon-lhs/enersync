@@ -62,3 +62,13 @@ def make_user():
             return user.user_id
 
     return _make_user
+
+@pytest.fixture
+def auth_headers(client, make_user):
+    # Creates a user with the given role, logs in, and returns the header that proves who they are
+    def _auth_headers(email, role="SuperAdmin", password="test-password-1"):
+        make_user(email, role=role, password=password)
+        response = client.post("/api/auth/login", json={"email": email, "password": password})
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    return _auth_headers
