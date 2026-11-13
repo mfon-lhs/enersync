@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.logistics_request import LogisticsRequest
 from app.models.user import User
 from app.schemas.asset import AssetCreate, AssetRead, AssetSummary, AssetUpdate
+from app.schemas.audit_log import AuditLogRead
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.logistics_request import RequestCreate, RequestRead, RequestUpdate
 from app.schemas.user import UserCreate, UserRead, UserUpdate
@@ -329,3 +330,27 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+# ---------- Audit log (SuperAdmin only) ----------
+
+
+@app.get(
+    "/api/audit-logs",
+    response_model=list[AuditLogRead],
+    dependencies=[Depends(require_roles("SuperAdmin"))],
+)
+def list_audit_logs(
+    table_name: str | None = None,
+    user_id: int | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    # Newest first. This route only reads the log. It never changes or deletes a row.
+    query = select(AuditLog).order_by(AuditLog.log_id.desc())
+    if table_name is not None:
+        query = query.where(AuditLog.table_name == table_name)
+    if user_id is not None:
+        query = query.where(AuditLog.user_id == user_id)
+    return db.scalars(query.limit(limit).offset(offset)).all()
