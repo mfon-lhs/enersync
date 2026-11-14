@@ -5,8 +5,14 @@ from sqlalchemy import text
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 
-# The two demo users created by database/schema.sql
-DEMO_EMAILS = ["a.bello@enersync.corp", "e.okon@enersync.corp"]
+# The demo users created by database/schema.sql and database/demo_data.sql.
+# Emails that are not in the database are skipped, so this is safe to run with only schema.sql loaded.
+DEMO_EMAILS = [
+    "i.nwosu@enersync.corp",  # SuperAdmin
+    "a.bello@enersync.corp",  # LogisticsManager
+    "e.okon@enersync.corp",  # FieldTechnician
+    "t.adebayo@enersync.corp",  # Viewer
+]
 
 
 def main() -> None:
@@ -28,7 +34,7 @@ def main() -> None:
     finally:
         db.close()
 
-    print("Done. Both demo users now have a real password hash.")
+    print("Done. Every demo user in the database now has a real password hash.")
 
 
 if __name__ == "__main__":

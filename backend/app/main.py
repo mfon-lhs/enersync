@@ -1,7 +1,8 @@
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
@@ -10,13 +11,28 @@ from app.models.asset import Asset
 from app.models.audit_log import AuditLog
 from app.models.logistics_request import LogisticsRequest
 from app.models.user import User
+from app.schemas.activity import ActivityItem
 from app.schemas.asset import AssetCreate, AssetRead, AssetSummary, AssetUpdate
 from app.schemas.audit_log import AuditLogRead
 from app.schemas.auth import LoginRequest, TokenResponse
-from app.schemas.logistics_request import RequestCreate, RequestRead, RequestUpdate
+from app.schemas.logistics_request import RequestCreate, RequestListItem, RequestRead, RequestUpdate
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 
-app = FastAPI(title="Enersync API", version="0.1.0")
+app = FastAPI(title="Enersync API", version="0.2.0")
+
+# The web pages that may call this API from a browser: the Vite development server.
+# A browser refuses to let any other page read the answers, even if it knows this API's address.
+ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    # Lets the browser read the X-Total-Count header that the list endpoints send
+    expose_headers=["X-Total-Count"],
+)
 
 # The status changes that are allowed. Any other change is refused with a 409 error.
 ALLOWED_NEXT_STATUS = {
@@ -30,6 +46,37 @@ AUDIT_ACTION_FOR_STATUS = {
     "Rejected": "REQUEST_REJECTED",
     "Completed": "REQUEST_COMPLETED",
 }
+
+
+def set_total_count(response: Response, total: int | None) -> None:
+    """Tell the caller how many rows exist in total, so it can work out how many pages there are."""
+    response.headers["X-Total-Count"] = str(total or 0)
+
+
+def activity_target(log: AuditLog) -> str:
+    """The thing an audit row is about, in words a person can read. It never includes an email address."""
+    data = log.new_value or log.old_value or {}
+    if log.table_name == "assets":
+        return data.get("asset_tag") or f"Asset #{log.record_id}"
+    if log.table_name == "logistics_requests":
+        return f"Request #{log.record_id}"
+    if log.table_name == "users":
+        name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
+        return name or f"User #{log.record_id}"
+    return f"{log.table_name} #{log.record_id}"
+
+
+def activity_detail(log: AuditLog) -> str | None:
+    """A short note on what happened. It names the fields that changed, never their values."""
+    old = log.old_value or {}
+    new = log.new_value or {}
+    if log.table_name == "logistics_requests" and new:
+        return f"{new.get('origin', '?')} to {new.get('destination', '?')}"
+    if old and new:
+        changed = [key for key in new if key != "updated_at" and old.get(key) != new.get(key)]
+        if changed:
+            return "Changed " + ", ".join(changed)
+    return None
 
 
 @app.get("/health")
@@ -47,6 +94,13 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=create_access_token(user.user_id))
 
 
+@app.get("/api/auth/me", response_model=UserRead)
+def read_current_user(current_user: User = Depends(get_current_user)):
+    # The web app calls this right after login to learn the user's name and role.
+    # The role is read from the database here, never from the token.
+    return current_user
+
+
 # ---------- Assets ----------
 
 
@@ -62,8 +116,19 @@ def assets_summary(db: Session = Depends(get_db)):
 
 
 @app.get("/api/assets", response_model=list[AssetRead], dependencies=[Depends(get_current_user)])
-def list_assets(db: Session = Depends(get_db)):
-    return db.scalars(select(Asset).order_by(Asset.asset_id)).all()
+def list_assets(
+    response: Response,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    skip: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    # With no limit, every asset after "skip" is returned. The total goes in a header,
+    # so the answer itself stays a plain list.
+    set_total_count(response, db.scalar(select(func.count()).select_from(Asset)))
+    query = select(Asset).order_by(Asset.asset_id).offset(skip)
+    if limit is not None:
+        query = query.limit(limit)
+    return db.scalars(query).all()
 
 
 @app.get("/api/assets/{asset_id}", response_model=AssetRead, dependencies=[Depends(get_current_user)])
@@ -125,6 +190,14 @@ def update_asset(
     old_value = AssetRead.model_validate(asset).model_dump(mode="json")
     for field, value in changes.items():
         setattr(asset, field, value)
+
+    # These pairs must be filled in together. The database enforces this too,
+    # but a clear 422 message is kinder than a database error.
+    if (asset.latitude is None) != (asset.longitude is None):
+        raise HTTPException(status_code=422, detail="Latitude and longitude must be set together")
+    if (asset.capacity_value is None) != (asset.capacity_unit is None):
+        raise HTTPException(status_code=422, detail="Capacity value and unit must be set together")
+
     new_value = AssetRead.model_validate(asset).model_dump(mode="json")
 
     db.add(
@@ -146,9 +219,52 @@ def update_asset(
 # ---------- Logistics requests ----------
 
 
-@app.get("/api/requests", response_model=list[RequestRead], dependencies=[Depends(get_current_user)])
-def list_requests(db: Session = Depends(get_db)):
-    return db.scalars(select(LogisticsRequest).order_by(LogisticsRequest.request_id)).all()
+@app.get("/api/requests", response_model=list[RequestListItem], dependencies=[Depends(get_current_user)])
+def list_requests(
+    response: Response,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    skip: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    set_total_count(response, db.scalar(select(func.count()).select_from(LogisticsRequest)))
+
+    # Each row also carries the asset's tag and name and the people's names,
+    # so a screen can show them without making more calls. Newest request first.
+    requester = aliased(User)
+    approver = aliased(User)
+    query = (
+        select(
+            LogisticsRequest,
+            Asset.asset_tag,
+            Asset.name,
+            requester.first_name,
+            requester.last_name,
+            approver.first_name,
+            approver.last_name,
+        )
+        .join(Asset, Asset.asset_id == LogisticsRequest.asset_id)
+        .join(requester, requester.user_id == LogisticsRequest.requested_by)
+        .outerjoin(approver, approver.user_id == LogisticsRequest.approved_by)
+        .order_by(LogisticsRequest.request_id.desc())
+        .offset(skip)
+    )
+    if limit is not None:
+        query = query.limit(limit)
+
+    rows = db.execute(query).all()
+
+    items = []
+    for row, asset_tag, asset_name, requester_first, requester_last, approver_first, approver_last in rows:
+        items.append(
+            RequestListItem(
+                **RequestRead.model_validate(row).model_dump(),
+                asset_tag=asset_tag,
+                asset_name=asset_name,
+                requested_by_name=f"{requester_first} {requester_last}",
+                approved_by_name=f"{approver_first} {approver_last}" if approver_first is not None else None,
+            )
+        )
+    return items
 
 
 @app.post("/api/requests", response_model=RequestRead, status_code=201)
@@ -159,8 +275,12 @@ def create_request(
     current_user: User = Depends(require_roles("SuperAdmin", "LogisticsManager", "FieldTechnician")),
 ):
     # A request can only be raised for an asset that exists
-    if db.get(Asset, data.asset_id) is None:
+    asset = db.get(Asset, data.asset_id)
+    if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
+    # A retired asset stays where it is
+    if asset.status == "Decommissioned":
+        raise HTTPException(status_code=409, detail="A decommissioned asset cannot be moved")
 
     logistics_request = LogisticsRequest(
         asset_id=data.asset_id,
@@ -168,6 +288,7 @@ def create_request(
         origin=data.origin,
         destination=data.destination,
         status="Pending",
+        priority=data.priority,
         departure_date=data.departure_date,
         estimated_arrival_date=data.estimated_arrival_date,
         notes=data.notes,
@@ -330,6 +451,37 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+# ---------- Recent activity (every logged-in user) ----------
+
+
+@app.get("/api/activity", response_model=list[ActivityItem], dependencies=[Depends(get_current_user)])
+def recent_activity(limit: int = Query(default=15, ge=1, le=50), db: Session = Depends(get_db)):
+    # A safe summary of the newest audit rows, for the dashboard feed. It shows who did what and to
+    # which record, but never stored values, email addresses or IP addresses.
+    # The full audit log stays SuperAdmin only.
+    actor = aliased(User)
+    rows = db.execute(
+        select(AuditLog, actor.first_name, actor.last_name)
+        .outerjoin(actor, actor.user_id == AuditLog.user_id)
+        .order_by(AuditLog.log_id.desc())
+        .limit(limit)
+    ).all()
+
+    return [
+        ActivityItem(
+            log_id=log.log_id,
+            action_type=log.action_type,
+            table_name=log.table_name,
+            record_id=log.record_id,
+            actor_name=f"{first_name} {last_name}" if first_name is not None else None,
+            target_label=activity_target(log),
+            detail=activity_detail(log),
+            created_at=log.created_at,
+        )
+        for log, first_name, last_name in rows
+    ]
 
 
 # ---------- Audit log (SuperAdmin only) ----------

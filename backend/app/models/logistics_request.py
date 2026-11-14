@@ -16,6 +16,16 @@ request_status_type = ENUM(
     create_type=False,  # The database already has this type, so SQLAlchemy must not create it
 )
 
+# The same allowed values as the request_priority type in database/schema.sql
+request_priority_type = ENUM(
+    "Low",
+    "Normal",
+    "High",
+    "Critical",
+    name="request_priority",
+    create_type=False,
+)
+
 
 class LogisticsRequest(Base):
     """Describes the logistics_requests table: a request to move an asset."""
@@ -29,6 +39,7 @@ class LogisticsRequest(Base):
     origin: Mapped[str] = mapped_column(String(100))
     destination: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(request_status_type)
+    priority: Mapped[str] = mapped_column(request_priority_type, default="Normal")
     departure_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     estimated_arrival_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column(Text)

@@ -29,9 +29,19 @@ def create_access_token(user_id: int) -> str:
 
 
 def decode_access_token(token: str) -> int | None:
-    """Return the user id inside a valid token, or None if the token is invalid or expired."""
+    """Return the user id inside a valid token, or None if the token cannot be trusted.
+
+    A token is refused when it is not a real token, was signed with another secret, has expired,
+    or is missing its expiry ("exp") or its user ("sub"). A token with no expiry would otherwise
+    work forever.
+    """
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
-    except jwt.PyJWTError:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=["HS256"],
+            options={"require": ["exp", "sub"]},
+        )
+        return int(payload["sub"])
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
         return None
-    return int(payload["sub"])
