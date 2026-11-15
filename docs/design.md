@@ -1,6 +1,6 @@
 # Enersync: Design Notes
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 ## 1. What Enersync does
 
@@ -96,6 +96,7 @@ The database itself refuses a utilization outside 0 to 100, a latitude outside -
 5. **Passwords are never stored in plain text.** Only bcrypt hashes are saved.
 6. **Request status flow.** A request starts as Pending. A SuperAdmin or LogisticsManager approves or rejects it. An approved request can then be marked Completed. Rejected and Completed are final. The server enforces this with `ALLOWED_NEXT_STATUS` in `main.py`, and answers any other change with a 409 error.
 7. **A decommissioned asset cannot be moved.** Raising a request for one is refused with a 409 error.
+8. **Completing a request moves the asset.** When a request becomes Completed, the asset's `current_location` becomes the request's destination. An asset that was InTransit becomes Operational again. A MaintenanceRequired asset keeps that status, because arriving somewhere does not repair it. The asset's latitude and longitude are cleared, because they described the old place and the new position is not known. If the asset was decommissioned after the request was approved, completing is refused with a 409 error and nothing changes. The move is audited as an ASSET_UPDATED row with the old and new values, saved in the same transaction as the request change. If the asset is already at the destination, no asset row is written. Approving or rejecting a request does not move the asset.
 8. **A request cannot arrive before it leaves.** If both dates are given, the estimated arrival date must not be earlier than the departure date.
 9. **Capacity and position come in pairs.** A capacity value needs a unit, and a latitude needs a longitude. The reverse is also true.
 10. **Inspection due date.** An asset is due for inspection on `last_inspected_at` plus `inspection_interval_days`. It is overdue when that date has passed and the asset is not Decommissioned. An asset that has never been inspected shows "Never inspected" and is not counted as overdue.
@@ -397,7 +398,7 @@ Every change writes its audit entry in the same transaction. The audit screen is
 2. **Maintenance requests.** The schema models only moves between locations. Should requests also cover maintenance? That would need a `request_type` column.
 3. **Database enforcement of the audit log.** Should the database itself block changes to `audit_logs`?
 4. **Demo hosting.** A free host, or Azure? Decide in week 8.
-5. **Completing a move.** Completing a request does not yet change the asset. Should Completed set the asset's `current_location` to the destination, and should Approved set it to InTransit? Both changes would be audited. Until this is decided, an edited asset is the only way to change its location.
+5. **Approved means in transit?** Should approving a request set the asset to InTransit? It is simple, but an asset can have several approved requests at once, so the rule would need a way to decide when it returns to Operational. For now only Completed changes the asset (rule 8 in section 5).
 6. **Token storage.** Move the token from `sessionStorage` to an HttpOnly cookie, which needs CSRF protection on the API.
 7. **Server-side search.** The tables search and filter in the browser over the full list. Past a few thousand rows, add `q` and `status` filters to the list endpoints.
 

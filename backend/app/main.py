@@ -40,6 +40,24 @@ ALLOWED_NEXT_STATUS = {
     "Approved": {"Completed"},
 }
 
+
+def move_asset_to_destination(asset: Asset, destination: str) -> None:
+    """What happens to an asset when its logistics request is completed.
+
+    - Its location becomes the request's destination.
+    - An asset that was "InTransit" is operating again.
+    - Its map position (latitude and longitude) belonged to the old place and the new one is not known,
+      so both are cleared instead of leaving a position that is now wrong.
+    A "MaintenanceRequired" asset keeps that status: arriving somewhere does not repair it.
+    """
+    if asset.current_location != destination:
+        asset.current_location = destination
+        asset.latitude = None
+        asset.longitude = None
+    if asset.status == "InTransit":
+        asset.status = "Operational"
+
+
 # The audit action to record for each new status
 AUDIT_ACTION_FOR_STATUS = {
     "Approved": "REQUEST_APPROVED",
@@ -331,6 +349,14 @@ def update_request_status(
             detail=f"A {logistics_request.status} request cannot be changed to {data.status}",
         )
 
+    # Completing a request means the asset has arrived, so it moves (see move_asset_to_destination).
+    # A decommissioned asset cannot be moved, so refuse before changing anything.
+    asset = None
+    if data.status == "Completed":
+        asset = db.get(Asset, logistics_request.asset_id)
+        if asset is not None and asset.status == "Decommissioned":
+            raise HTTPException(status_code=409, detail="A decommissioned asset cannot be moved")
+
     old_value = RequestRead.model_validate(logistics_request).model_dump(mode="json")
 
     logistics_request.status = data.status
@@ -339,6 +365,7 @@ def update_request_status(
     db.flush()  # sends the change now, so the database updates updated_at
     db.refresh(logistics_request)
 
+    ip_address = request.client.host if request.client else None
     db.add(
         AuditLog(
             user_id=current_user.user_id,
@@ -347,9 +374,26 @@ def update_request_status(
             record_id=request_id,
             old_value=old_value,
             new_value=RequestRead.model_validate(logistics_request).model_dump(mode="json"),
-            ip_address=request.client.host if request.client else None,
+            ip_address=ip_address,
         )
     )
+
+    if asset is not None:
+        asset_before = AssetRead.model_validate(asset).model_dump(mode="json")
+        move_asset_to_destination(asset, logistics_request.destination)
+        asset_after = AssetRead.model_validate(asset).model_dump(mode="json")
+        if asset_after != asset_before:
+            db.add(
+                AuditLog(
+                    user_id=current_user.user_id,
+                    action_type="ASSET_UPDATED",
+                    table_name="assets",
+                    record_id=asset.asset_id,
+                    old_value=asset_before,
+                    new_value=asset_after,
+                    ip_address=ip_address,
+                )
+            )
     db.commit()
     db.refresh(logistics_request)
     return logistics_request
