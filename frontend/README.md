@@ -14,6 +14,14 @@ Enersync is an independent portfolio project. It is not affiliated with any ener
 
 The backend allows calls only from `http://localhost:5173` and `http://127.0.0.1:5173`, so the dev server is set to keep exactly port 5173.
 
+## Run the tests
+
+In this `frontend` folder:
+
+`npm test` runs every test once. `npm run test:watch` keeps running and re-checks whenever you save a file.
+
+Tests sit next to the file they check and are named `*.test.js` or `*.test.jsx`.
+
 ## Where things are
 
 | Folder / file | What it is |
@@ -24,6 +32,8 @@ The backend allows calls only from `http://localhost:5173` and `http://127.0.0.1
 | `src/pages/` | One file per screen: login, dashboard, assets, requests, audit log, users. |
 | `src/components/` | Shared pieces: dialogs, badges, forms, layout. |
 | `src/styles/` | The CSS. It uses only the variables that `theme.js` sets. |
+| `src/test/setup.js` | Runs before every test file. |
+| `vitest.config.js` | Test settings. `vite.config.js` is still used by `npm run dev` and `npm run build`. |
 
 ## If the backend is somewhere else
 

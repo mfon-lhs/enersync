@@ -382,8 +382,22 @@ Every change writes its audit entry in the same transaction. The audit screen is
 ### Running and checking the frontend
 1. Start the backend (`python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000` in `backend`, with the virtual environment active).
 2. In `frontend`, run `npm install` once, then `npm run dev`, and open http://localhost:5173.
-3. `npm run build` checks that the whole app compiles. Backend tests run with `python -m pytest` in `backend`.
-4. The frontend has no automated tests yet (see section 13).
+3. `npm run build` checks that the whole app compiles.
+4. `npm test` in `frontend` runs the frontend tests (Vitest, with Testing Library in a simulated browser). `npm run test:watch` re-runs them as files change. Backend tests run with `python -m pytest` in `backend`.
+
+### Frontend tests
+Tests sit next to the file they check, named `*.test.js` or `*.test.jsx`.
+
+| Area | What is checked |
+|---|---|
+| `auth/roles.js` | The full role table (section 3), the allowed request status changes, and that an unknown role may do nothing |
+| `api/client.js` | The Bearer header, the 401 interceptor, the readable error messages, paging through every row, and the audit log's extra-row trick |
+| `lib/jwt.js`, `lib/format.js` | Token expiry, dates, the inspection due date (rule 11), names and labels |
+| `lib/fleet.js` | The dashboard figures: availability (rule 12), critical assets at risk, overdue and due soon, chart data |
+| Components | The dialog (Escape, backdrop, focus, scroll lock), the confirm dialog, the pager, the badges, the change viewer |
+| Request form | Choosing an asset, the "Request move" starting state, every validation message, the data sent, server errors and recovery |
+
+Pressing Tab to stay inside a dialog is not tested, because the simulated browser cannot measure layout. It is checked by hand in Chrome. The page screens (Assets, Requests, Users, Audit log) are also checked by hand for now.
 
 ## 12. Decision log
 
@@ -424,6 +438,7 @@ Every change writes its audit entry in the same transaction. The audit screen is
 | 33 | The server stops a SuperAdmin from demoting or deactivating themselves | The last administrator must not be able to lock everyone out. The interface disables the same controls as a courtesy. |
 | 34 | Tighten the asset table on laptop screens and show only an icon on the "Request move" button below 1600px | The table must fit at 1280px without sideways scrolling. The full label returns on wide screens. |
 | 35 | Turn table rows into cards on phones | A wide table on a phone hides its status and action buttons off-screen. Cards keep every value and button in view without sideways scrolling. |
+| 36 | Test the frontend with Vitest and Testing Library | They are the standard pair for Vite and React projects, and tests run in a simulated browser so `npm test` is fast and needs no open browser. Tests cover rules and behaviour, not styling. |
 
 ## 13. Open questions
 
@@ -435,7 +450,7 @@ Every change writes its audit entry in the same transaction. The audit screen is
 6. **Token storage.** Move the token from `sessionStorage` to an HttpOnly cookie, which needs CSRF protection on the API.
 7. **Server-side search.** The tables search and filter in the browser over the full list. Past a few thousand rows, add `q` and `status` filters to the list endpoints.
 
-8. **Frontend tests.** The frontend is checked by building it and by hand, but has no automated tests. Add component tests for the role rules, the request actions and the forms.
+8. **More frontend tests.** The logic, the shared components and the request form are tested (section 11). The four data screens, the login page and the route guard are not. Add tests for them, such as the role-based buttons on the Asset Fleet.
 9. **Positions on screen.** Latitude and longitude are stored and can be edited, but nothing draws them. Plot them on the dashboard, or leave them for a later map?
 10. **Filters in the address bar.** Keep the Asset Fleet and Logistics filters in the URL, so a filtered view can be linked to and the dashboard cards can open a filtered list.
 11. **Completion warning.** The confirmation for "Mark completed" could say that the asset's location will change to the destination.
