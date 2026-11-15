@@ -112,15 +112,15 @@ export default function AuditLogPage() {
                               <Chevron size={17} />
                             </button>
                           </td>
-                          <td className="nowrap">{formatDateTime(row.created_at)}</td>
-                          <td>{row.user_id ? names.get(row.user_id) || `User #${row.user_id}` : <span className="muted">System</span>}</td>
-                          <td>
+                          <td className="nowrap" data-label="When">{formatDateTime(row.created_at)}</td>
+                          <td data-label="Who">{row.user_id ? names.get(row.user_id) || `User #${row.user_id}` : <span className="muted">System</span>}</td>
+                          <td className="cell-wide" data-label="Action">
                             <ActionBadge action={row.action_type} />
                           </td>
-                          <td>
+                          <td data-label="Record">
                             {TABLE_LABEL[row.table_name] || row.table_name} <span className="mono">#{row.record_id}</span>
                           </td>
-                          <td className="mono">{row.ip_address || "—"}</td>
+                          <td className="mono" data-label="IP address">{row.ip_address || "—"}</td>
                         </tr>
                         {open && (
                           <tr className="row-detail">

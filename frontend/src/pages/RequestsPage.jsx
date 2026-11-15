@@ -205,7 +205,7 @@ export default function RequestsPage() {
             <Search size={16} aria-hidden="true" />
             <input
               type="search"
-              placeholder="Search asset, route, person or request number"
+              placeholder="Search asset, route or person"
               value={search}
               onChange={(event) => filterChange(setSearch)(event.target.value)}
               aria-label="Search requests"
@@ -269,31 +269,31 @@ export default function RequestsPage() {
                 <tbody>
                   {visible.map((request) => (
                     <tr key={request.request_id}>
-                      <td className="mono">{request.request_id}</td>
-                      <td className="cell-tag">
+                      <td className="mono" data-label="Request">{request.request_id}</td>
+                      <td className="cell-tag" data-label="Asset">
                         <span className="mono">{request.asset_tag}</span>
                         <div className="muted">
                           <small>{request.asset_name}</small>
                         </div>
                       </td>
-                      <td>
+                      <td className="cell-wide" data-label="Route">
                         <div className="route">
                           <span>{request.origin}</span>
                           <ArrowRight size={14} aria-label="to" />
                           <span>{request.destination}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Priority">
                         <PriorityBadge priority={request.priority} />
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <RequestStatusBadge status={request.status} />
                       </td>
-                      <td>
+                      <td data-label="Requested by">
                         <div>{request.requested_by_name}</div>
                         <small className="muted">{timeAgo(request.created_at)}</small>
                       </td>
-                      <td>{request.estimated_arrival_date ? formatDate(request.estimated_arrival_date) : <span className="muted">—</span>}</td>
+                      <td data-label="Arrival">{request.estimated_arrival_date ? formatDate(request.estimated_arrival_date) : <span className="muted">—</span>}</td>
                       <td className="cell-actions">
                         <div className="row-actions">
                           <ActionButtons request={request} role={role} onAct={ask} />

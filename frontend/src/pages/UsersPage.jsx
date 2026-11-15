@@ -87,7 +87,7 @@ export default function UsersPage() {
                   const itsMe = person.user_id === me.user_id;
                   return (
                     <tr key={person.user_id} className={person.is_active ? "" : "row-muted"}>
-                      <td>
+                      <td className="cell-wide" data-label="User">
                         <div className="person">
                           <span className="avatar avatar-sm" aria-hidden="true">
                             {initials(fullName(person))}
@@ -101,7 +101,7 @@ export default function UsersPage() {
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td className="cell-wide" data-label="Role">
                         <select
                           aria-label={`Role for ${fullName(person)}`}
                           value={person.role}
@@ -116,14 +116,14 @@ export default function UsersPage() {
                           ))}
                         </select>
                       </td>
-                      <td>{person.location}</td>
-                      <td>
+                      <td data-label="Location">{person.location}</td>
+                      <td data-label="Status">
                         <span className="badge" style={{ "--badge": person.is_active ? "var(--operational)" : "var(--muted)" }}>
                           <span className="badge-dot" aria-hidden="true" />
                           {person.is_active ? "Active" : "Deactivated"}
                         </span>
                       </td>
-                      <td>{formatDate(person.created_at)}</td>
+                      <td data-label="Joined">{formatDate(person.created_at)}</td>
                       <td className="cell-actions">
                         <button
                           type="button"

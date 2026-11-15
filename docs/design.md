@@ -283,7 +283,8 @@ White text on the Primary blue would only reach 3.68 to 1, so solid primary butt
 - Layout works from about 360px wide upward (checked at phone, tablet and laptop widths).
   - Below 960px the sidebar becomes a slide-in menu, and the menu closes after each navigation.
   - Below 900px the login screen drops its brand panel.
-  - Tables scroll sideways inside their panel when they do not fit.
+  - Below 640px every table row becomes a small card. The column headings are hidden, and each value shows its own heading above it. The buttons of a row sit at the bottom of its card, with their words back. Between 640px and about 1100px, tables that do not fit scroll sideways inside their panel.
+  - Below 640px the top bar uses a smaller title, and the page's main button (such as Add asset) spans the full width.
   - Below 1440px the sidebar and the table cells get tighter so the Asset Fleet table fits at 1280px without sideways scrolling.
   - Below 1600px the "Request move" button on an asset row shows only its truck icon, with the name as a tooltip and for screen readers.
 
@@ -422,6 +423,7 @@ Every change writes its audit entry in the same transaction. The audit screen is
 | 32 | Show a decorative illustration, not a map, on the login screen | The login screen has no data to plot, so it uses fixed fictional sites and says nothing it cannot back up (rule 14). |
 | 33 | The server stops a SuperAdmin from demoting or deactivating themselves | The last administrator must not be able to lock everyone out. The interface disables the same controls as a courtesy. |
 | 34 | Tighten the asset table on laptop screens and show only an icon on the "Request move" button below 1600px | The table must fit at 1280px without sideways scrolling. The full label returns on wide screens. |
+| 35 | Turn table rows into cards on phones | A wide table on a phone hides its status and action buttons off-screen. Cards keep every value and button in view without sideways scrolling. |
 
 ## 13. Open questions
 

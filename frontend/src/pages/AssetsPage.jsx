@@ -164,7 +164,7 @@ export default function AssetsPage() {
             <Search size={16} aria-hidden="true" />
             <input
               type="search"
-              placeholder="Search tag, name, category or location"
+              placeholder="Search tag, name or location"
               value={search}
               onChange={(event) => changeFilter(setSearch)(event.target.value)}
               aria-label="Search assets"
@@ -246,10 +246,10 @@ export default function AssetsPage() {
                 <tbody>
                   {visible.map((asset) => (
                     <tr key={asset.asset_id}>
-                      <td className="cell-tag">
+                      <td className="cell-tag" data-label="Tag">
                         <span className="mono">{asset.asset_tag}</span>
                       </td>
-                      <td>
+                      <td className="cell-wide" data-label="Asset">
                         <div className="cell-title">
                           {asset.name}
                           {asset.is_critical && (
@@ -260,15 +260,15 @@ export default function AssetsPage() {
                         </div>
                         <small className="muted">{asset.category}</small>
                       </td>
-                      <td>
+                      <td className="cell-wide" data-label="Status">
                         <AssetStatusBadge status={asset.status} />
                       </td>
-                      <td>{asset.current_location}</td>
-                      <td>
+                      <td data-label="Location">{asset.current_location}</td>
+                      <td data-label="Utilisation">
                         <UtilBar value={asset.utilization_pct} />
                       </td>
-                      <td className="mono">{formatCapacity(asset)}</td>
-                      <td>
+                      <td className="mono" data-label="Capacity">{formatCapacity(asset)}</td>
+                      <td data-label="Next inspection">
                         <InspectionCell asset={asset} />
                       </td>
                       <td className="cell-actions">

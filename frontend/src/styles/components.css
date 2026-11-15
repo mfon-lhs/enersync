@@ -780,3 +780,135 @@ fieldset {
     gap: 8px;
   }
 }
+
+/* ---------- Phones: each table row becomes a small card ----------
+   The column headings are hidden, and every cell shows its own heading (from data-label) above its value. */
+@media (max-width: 640px) {
+  .table-wrap {
+    margin: 0;
+    padding: 0;
+    overflow-x: visible;
+  }
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+  /* The headings stay for screen readers but are not drawn */
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    margin-bottom: 12px;
+    padding: 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+  .table tbody tr:hover {
+    background: var(--surface-2);
+  }
+  .table td,
+  .table tbody tr:last-child td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .table td:empty {
+    display: none;
+  }
+  .table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  /* The first cell of a card and any cell marked wide use the full width */
+  .table td:first-child,
+  .table td.cell-wide,
+  .table td.cell-actions {
+    grid-column: 1 / -1;
+  }
+  .table td.cell-actions {
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    text-align: left;
+  }
+  .table td.cell-actions .row-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  /* On a phone there is room for the words again */
+  .btn-label {
+    display: inline;
+  }
+  .table select {
+    width: 100%;
+    min-width: 0;
+  }
+  .table tbody .row-detail {
+    margin-top: -8px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Top bar: a shorter title, and a status pill that never wraps */
+  .topbar {
+    gap: 10px;
+  }
+  .topbar h1 {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 15px;
+    letter-spacing: 0.03em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar-right {
+    flex: none;
+    gap: 8px;
+  }
+  .pill {
+    white-space: nowrap;
+  }
+  .page-head .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  /* A long label wraps inside its badge instead of running into the next field */
+  .table td .badge {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 640px) {
+  /* An opened audit row: tint the whole card, not each cell */
+  .table tbody .row-open {
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface-2));
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border-strong));
+  }
+  .table tbody .row-open td,
+  .table tbody .row-detail td {
+    background: transparent;
+  }
+  .table tbody .row-detail {
+    padding: 8px 14px 14px;
+    background: transparent;
+    border-style: dashed;
+  }
+}
