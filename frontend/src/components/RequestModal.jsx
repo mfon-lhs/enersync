@@ -1,5 +1,5 @@
 import { LoaderCircle, Send } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import Field from "./Field.jsx";
 import Modal from "./Modal.jsx";
@@ -11,14 +11,17 @@ import { PRIORITY } from "../theme.js";
 
 const PRIORITIES = Object.keys(PRIORITY);
 
-// The form for raising a new logistics request
-export default function RequestModal({ onClose, onSaved }) {
+// The form for raising a new logistics request.
+// With presetAsset (the "Request move" button on an asset row), the asset and "From" are already filled in.
+export default function RequestModal({ presetAsset = null, onClose, onSaved }) {
   const toast = useToast();
   const { data: assets, error, loading, reload } = useAsync(api.listAssets, []);
+  const destinationRef = useRef(null);
+  const assetRef = useRef(null);
 
   const [form, setForm] = useState({
-    asset_id: "",
-    origin: "",
+    asset_id: presetAsset ? String(presetAsset.asset_id) : "",
+    origin: presetAsset ? presetAsset.current_location : "",
     destination: "",
     priority: "Normal",
     departure_date: "",
@@ -28,6 +31,12 @@ export default function RequestModal({ onClose, onSaved }) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // When the form appears, put the cursor where the person needs to type next
+  useEffect(() => {
+    if (loading || error) return;
+    (presetAsset ? destinationRef.current : assetRef.current)?.focus();
+  }, [loading, error, presetAsset]);
 
   // A decommissioned asset cannot be moved (the backend refuses it too)
   const movable = useMemo(() => (assets || []).filter((a) => a.status !== "Decommissioned"), [assets]);
@@ -123,7 +132,7 @@ export default function RequestModal({ onClose, onSaved }) {
           )}
           <fieldset disabled={busy} className="form-grid">
             <Field label="Asset" error={errors.asset_id} className="form-wide">
-              <select value={form.asset_id} onChange={pickAsset}>
+              <select ref={assetRef} value={form.asset_id} onChange={pickAsset}>
                 <option value="">Choose an asset…</option>
                 {movable.map((asset) => (
                   <option key={asset.asset_id} value={asset.asset_id}>
@@ -136,7 +145,7 @@ export default function RequestModal({ onClose, onSaved }) {
               <input value={form.origin} onChange={set("origin")} maxLength={100} />
             </Field>
             <Field label="To" error={errors.destination}>
-              <input value={form.destination} onChange={set("destination")} maxLength={100} />
+              <input ref={destinationRef} value={form.destination} onChange={set("destination")} maxLength={100} />
             </Field>
             <Field label="Priority">
               <select value={form.priority} onChange={set("priority")}>

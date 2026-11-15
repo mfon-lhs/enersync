@@ -1,10 +1,11 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Cpu, Eye, Pencil, Plus, Search, ShieldAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Cpu, Eye, Pencil, Plus, Search, ShieldAlert, Truck, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { can } from "../auth/roles.js";
 import AssetModal from "../components/AssetModal.jsx";
 import Pager from "../components/Pager.jsx";
+import RequestModal from "../components/RequestModal.jsx";
 import { EmptyState, ErrorState, LoadingRows } from "../components/States.jsx";
 import { AssetStatusBadge } from "../components/StatusBadge.jsx";
 import { formatCapacity, formatDate, inspectionInfo } from "../lib/format.js";
@@ -81,6 +82,7 @@ function InspectionCell({ asset }) {
 export default function AssetsPage() {
   const { role } = useAuth();
   const canManage = can.manageAssets(role);
+  const canRequest = can.raiseRequest(role);
   const { data: assets, error, loading, reload } = useAsync(api.listAssets, []);
 
   const [search, setSearch] = useState("");
@@ -91,6 +93,7 @@ export default function AssetsPage() {
   const [sort, setSort] = useState({ key: "asset_tag", direction: "asc" });
   const [page, setPage] = useState(0);
   const [modal, setModal] = useState(null); // { mode: "create" | "edit" | "view", asset }
+  const [moveAsset, setMoveAsset] = useState(null); // the asset a "Request move" dialog is open for
 
   const all = assets || [];
   const locations = useMemo(() => [...new Set(all.map((a) => a.current_location))].sort(), [all]);
@@ -269,15 +272,28 @@ export default function AssetsPage() {
                         <InspectionCell asset={asset} />
                       </td>
                       <td className="cell-actions">
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          aria-label={`${canManage ? "Edit" : "View"} ${asset.asset_tag}`}
-                          title={canManage ? "Edit" : "View details"}
-                          onClick={() => setModal({ mode: canManage ? "edit" : "view", asset })}
-                        >
-                          {canManage ? <Pencil size={17} /> : <Eye size={17} />}
-                        </button>
+                        <div className="row-actions">
+                          {canRequest && asset.status !== "Decommissioned" && (
+                            <button
+                              type="button"
+                              className="btn btn-soft btn-sm"
+                              aria-label={`Request move for ${asset.asset_tag}`}
+                              title="Request move"
+                              onClick={() => setMoveAsset(asset)}
+                            >
+                              <Truck size={14} /> <span className="btn-label">Request move</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={`${canManage ? "Edit" : "View"} ${asset.asset_tag}`}
+                            title={canManage ? "Edit" : "View details"}
+                            onClick={() => setModal({ mode: canManage ? "edit" : "view", asset })}
+                          >
+                            {canManage ? <Pencil size={17} /> : <Eye size={17} />}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -293,6 +309,14 @@ export default function AssetsPage() {
           </>
         )}
       </section>
+
+      {moveAsset && (
+        <RequestModal
+          presetAsset={moveAsset}
+          onClose={() => setMoveAsset(null)}
+          onSaved={() => setMoveAsset(null)}
+        />
+      )}
 
       {modal && (
         <AssetModal

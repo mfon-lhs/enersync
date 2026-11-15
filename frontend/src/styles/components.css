@@ -751,3 +751,32 @@ fieldset {
     flex: 1 1 140px;
   }
 }
+
+/* A button's words appear only when there is room. Below that, the icon stays and the tooltip says what it does. */
+@media (max-width: 1599px) {
+  .btn-label {
+    display: none;
+  }
+}
+
+/* On laptop-sized screens, tighten the table so all columns fit without sideways scrolling. */
+@media (max-width: 1440px) {
+  :root {
+    --sidebar: 216px;
+  }
+  .table {
+    font-size: 13px;
+  }
+  .table th,
+  .table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .table th {
+    letter-spacing: 0.05em;
+  }
+  .util {
+    min-width: 84px;
+    gap: 8px;
+  }
+}
