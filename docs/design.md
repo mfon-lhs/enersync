@@ -97,12 +97,13 @@ The database itself refuses a utilization outside 0 to 100, a latitude outside -
 6. **Request status flow.** A request starts as Pending. A SuperAdmin or LogisticsManager approves or rejects it. An approved request can then be marked Completed. Rejected and Completed are final. The server enforces this with `ALLOWED_NEXT_STATUS` in `main.py`, and answers any other change with a 409 error.
 7. **A decommissioned asset cannot be moved.** Raising a request for one is refused with a 409 error.
 8. **Completing a request moves the asset.** When a request becomes Completed, the asset's `current_location` becomes the request's destination. An asset that was InTransit becomes Operational again. A MaintenanceRequired asset keeps that status, because arriving somewhere does not repair it. The asset's latitude and longitude are cleared, because they described the old place and the new position is not known. If the asset was decommissioned after the request was approved, completing is refused with a 409 error and nothing changes. The move is audited as an ASSET_UPDATED row with the old and new values, saved in the same transaction as the request change. If the asset is already at the destination, no asset row is written. Approving or rejecting a request does not move the asset.
-8. **A request cannot arrive before it leaves.** If both dates are given, the estimated arrival date must not be earlier than the departure date.
-9. **Capacity and position come in pairs.** A capacity value needs a unit, and a latitude needs a longitude. The reverse is also true.
-10. **Inspection due date.** An asset is due for inspection on `last_inspected_at` plus `inspection_interval_days`. It is overdue when that date has passed and the asset is not Decommissioned. An asset that has never been inspected shows "Never inspected" and is not counted as overdue.
-11. **Fleet availability.** Operational assets divided by all assets that are not Decommissioned, shown as a percentage.
-12. **The activity feed is a safe summary.** It shows who did what to which record, and the names of the fields that changed. It never shows stored values, email addresses or IP addresses. Those stay in the audit log, which only a SuperAdmin can read.
-13. **No invented readings.** Utilization is a number that people enter. The interface never makes up live telemetry, trend lines or history that the database does not hold.
+9. **A request cannot arrive before it leaves.** If both dates are given, the estimated arrival date must not be earlier than the departure date.
+10. **Capacity and position come in pairs.** A capacity value needs a unit, and a latitude needs a longitude. The reverse is also true.
+11. **Inspection due date.** An asset is due for inspection on `last_inspected_at` plus `inspection_interval_days`. It is overdue when that date has passed and the asset is not Decommissioned. An asset that has never been inspected is due straight away: the interface shows "Never inspected" and counts it as overdue. A decommissioned asset is never overdue. The interface works this out in the browser. The server does not store it.
+12. **Fleet availability.** Operational assets divided by all assets that are not Decommissioned, shown as a percentage.
+13. **The activity feed is a safe summary.** It shows who did what to which record, and the names of the fields that changed. It never shows stored values, email addresses or IP addresses. Those stay in the audit log, which only a SuperAdmin can read.
+14. **No invented readings.** Utilization is a number that people enter. The interface never makes up live telemetry, trend lines or history that the database does not hold.
+15. **A SuperAdmin cannot lock themselves out.** The server refuses (409) a SuperAdmin who tries to change their own role or deactivate their own account, so the last administrator cannot remove everyone's access. The Users screen disables those two controls on the person's own row.
 
 ## 6. Endpoints
 
@@ -142,85 +143,82 @@ All endpoints start with `/api`, except `/health`. The last column lists the rol
 | Database access | SQLAlchemy with the psycopg driver | Connection string starts with `postgresql+psycopg://` |
 | Login tokens | JWT, valid for 60 minutes | The lifetime is set in `.env`. A token must carry both `sub` and `exp`. |
 | Password hashing | bcrypt | |
-| Frontend | React 19, built with Vite 7 | Create React App is not used. It was deprecated in February 2025. Needs the current Node.js LTS. |
+| Frontend | React 19, built with Vite 6 | Create React App is not used. It was deprecated in February 2025. Needs the current Node.js LTS. |
 | Routing | React Router 7 | Imported from `react-router`. The separate `react-router-dom` package is no longer needed. |
-| Charts | Recharts 3 | Status distribution and request pipeline. Per-bar and per-slice colours use the `shape` prop, because `Cell` is deprecated. |
+| Charts | Recharts 3 | Status distribution and utilisation by location. Per-bar and per-slice colours use the `shape` prop, because `Cell` is deprecated. |
 | Icons | Lucide (`lucide-react`) | |
 | Styling | Plain CSS and one theme file | No Tailwind and no component kit. |
-| Fonts | Inter for text, JetBrains Mono for tags, ids and JSON | Loaded from Google Fonts, with system fonts as a fallback. |
+| Fonts | Chakra Petch for headings, IBM Plex Sans for text, IBM Plex Mono for tags, ids and JSON | Loaded from Google Fonts, with system fonts as a fallback. |
 | Containers | Docker Compose | Week 7 |
 | Continuous integration | GitHub Actions | Week 7. Runs tests and the linter on every push. |
 
 ## 8. Frontend architecture
 
-The frontend lives in `frontend/` and is a single-page app. It talks to the API over HTTP and holds no business rules of its own. It mirrors them so that forms can give quick feedback, but the server is always the authority.
+The frontend lives in `frontend/` and is a single-page app. It talks to the API over HTTP and holds no business rules of its own. It mirrors them so that forms can give quick feedback and screens can hide what a role cannot use, but the server is always the authority.
 
 ### Folder layout
 
 ```text
 frontend/
-  index.html
+  index.html                loads the fonts from Google Fonts
   package.json
   vite.config.js            port 5173, and it fails loudly if that port is busy
   .env.example              VITE_API_URL=http://127.0.0.1:8000
   src/
-    main.jsx                applies the theme, then renders the app
-    App.jsx                 routes
-    theme.js                the ONLY place hex colours are written
-    styles/                 base.css, layout.css, components.css, pages.css
-    api/                    client.js (fetch wrapper) and index.js (one function per endpoint)
-    auth/                   AuthContext.jsx, ProtectedRoute.jsx, permissions.js
-    hooks/                  useResource.js (loading, error, polling), useNow.js
-    lib/                    constants.js, format.js, metrics.js, diff.js
-    components/
-      layout/               AppShell, Sidebar, Topbar
-      ui/                   buttons, badges, modal, confirm dialog, toasts, tables, forms, states
-      charts/               StatusChart, PipelineChart, SiteMap
-      dashboard/            ActivityFeed, AttentionList
-      assets/               AssetFormModal
-      requests/             RequestFormModal
-      users/                UserFormModal
-      audit/                JsonDiff
-    pages/                  Login, Dashboard, Assets, Requests, Audit, Users, NotFound
+    main.jsx                applies the theme, then renders the app inside the providers
+    App.jsx                 routes, and the RoleGate that guards the Audit log and Users screens
+    theme.js                the ONLY place hex colours and fonts are written
+    styles/                 base.css (page and shell), components.css, pages.css
+    api/client.js           the fetch wrapper and one function per endpoint
+    auth/                   AuthContext.jsx (login state), roles.js (what each role may do)
+    lib/                    hooks.js (loading and polling), fleet.js (dashboard figures),
+                            format.js (dates, numbers, inspection due date), jwt.js (token expiry)
+    components/             Layout, Modal, ConfirmDialog, Toasts, ErrorBoundary, States, Pager, Field,
+                            StatusBadge, MetricCard, JsonDiff, and the three forms:
+                            AssetModal, RequestModal, UserModal
+    pages/                  Login, Dashboard, Assets, Requests, AuditLog, Users, NotFound
 ```
 
+### Start-up order
+`main.jsx` applies the theme, then renders the app inside, from the outside in: an error boundary, the router, the toast provider and the auth provider. If any screen crashes while drawing, the error boundary replaces the whole page with a message and a "Back to the dashboard" button.
+
 ### API client (`api/client.js`)
-- **Bearer injection.** Every call adds `Authorization: Bearer <token>` automatically. Screens never touch the token.
-- **401 interceptor.** A 401 from any call except login clears the token and tells the auth context to log out, which sends the person to the login page with the message "Your session has expired". Login itself is exempt, so a wrong password shows "Wrong email or password" on the form instead.
-- **Errors.** Every failure becomes an `ApiError` with a status, a readable message and, for a 422, a map of field names to messages. If the API cannot be reached, the message says so and names the address it tried.
-- **Paging.** `fetchAll` loads every page, 200 rows at a time, using `limit`, `skip` and `X-Total-Count`. Search and filters then run on the complete list, so they never miss rows.
-- **Cancelling.** Calls take an abort signal, so a screen that closes stops its own requests.
+- **Bearer injection.** Every call except login and `/health` adds `Authorization: Bearer <token>`. Screens never touch the token. With no usable token, the call is not even sent.
+- **401 interceptor.** A 401 from any call except login clears the token and tells the auth context to log out, which shows the login page with the message "Your session has expired. Please log in again." Login itself is exempt, so a wrong password shows "Wrong email or password." on the form instead.
+- **Errors.** Every failure becomes an `ApiError` with a status and a readable message. A 422 lists each problem with its field name. If the API cannot be reached, the message says so and names the address it tried.
+- **Paging.** `listAll` loads every page of assets or requests, 500 rows at a time (the most the server allows), using `limit`, `skip` and the `X-Total-Count` header. Searching, filtering and sorting then run on the complete list, so they never miss rows. The audit log asks for one row more than a page shows, to learn whether a next page exists.
 
 ### Session and tokens
-1. Login posts to `/api/auth/login` and stores the token in `sessionStorage`, so it disappears when the tab closes.
+1. Login posts to `/api/auth/login` and stores the token in `sessionStorage` (or in memory only, if the browser blocks storage), so it disappears when the tab closes.
 2. The app then calls `/api/auth/me`. The role comes from the server's answer, never from the token.
-3. When the page reloads, the app restores the token and calls `/api/auth/me` again before showing anything.
-4. The app reads the token's expiry and logs the person out when it passes. The server still rejects an expired token on its own.
-5. If the API cannot be reached while restoring a session, the app shows a retry screen. It does not log the person out.
+3. When the page reloads, the app finds the saved token, shows a loading ring and calls `/api/auth/me` again before showing anything.
+4. The app reads the token's expiry and logs the person out at that moment. The server still rejects an expired token on its own, and refuses a token whose user was deactivated.
+5. If the saved session cannot be restored for any reason, including a stopped backend, the app returns to the login page with the message "Could not restore your session."
 
 ### Role-based interface
-Navigation and actions follow section 3.
+Navigation and actions follow section 3. `auth/roles.js` mirrors the server's rules, and the server enforces them.
 
 | Screen or action | SuperAdmin | LogisticsManager | FieldTechnician | Viewer |
 |---|---|---|---|---|
-| Dashboard, Assets, Requests | Yes | Yes | Yes | Yes |
-| New asset, edit asset | Yes | Yes | Read only | Read only |
-| New request | Yes | Yes | Yes | No |
+| Command Center, Asset Fleet, Logistics | Yes | Yes | Yes | Yes |
+| Add or edit an asset | Yes | Yes | Read only | Read only |
+| New request, and "Request move" on an asset row | Yes | Yes | Yes | No |
 | Approve, reject, complete | Yes | Yes | No | No |
 | Users screen | Yes | Hidden | Hidden | Hidden |
 | Audit log screen | Yes | Hidden | Hidden | Hidden |
 
-A person who types the address of a hidden screen sees a "Not allowed" panel. The server would refuse the data anyway.
+The menu hides the screens a role cannot open. A person who types the address of a hidden screen is sent back to the dashboard. The server would refuse the data anyway.
 
 ### Data loading
-- Each screen loads its data with `useResource`, which tracks loading and error state and can refresh itself.
-- The dashboard refreshes every 30 seconds, and pauses while the browser tab is hidden. The word "Live" in the interface means exactly this: it polls. There are no WebSockets (see section 14).
-- A refresh that fails keeps the old data on screen and shows a small "Reconnecting" note.
+- Each screen loads its data with `useAsync` (in `lib/hooks.js`), which tracks loading and error state and can reload itself.
+- The dashboard reloads every 30 seconds, and pauses while the browser tab is hidden. The word "Live" means exactly this: it polls. There are no WebSockets (see section 14). A reload that fails keeps the old data on screen and shows "Could not refresh" with the reason.
+- The top bar asks `/health` every 20 seconds and shows "API online" or "API offline".
+- The Asset Fleet, Logistics and Users screens load once, and again after a change they made, or when the person presses Try again.
 
 ### Errors and empty states
-- An error boundary around the page area means a crash in one screen leaves the sidebar working.
-- Every list has a loading skeleton, an empty state and an error state with a Retry button.
-- Success and failure of every action appear as a toast. Field errors appear under the field.
+- Every list has a loading skeleton, an empty state and an error state with a "Try again" button.
+- Success and failure of an action appear as a toast. Field errors appear under the field, and a server error that belongs to the whole form appears at the top of the dialog.
+- Dialogs name themselves for screen readers, close on Escape, keep Tab inside, and return focus to where it was.
 
 ## 9. Design system
 
@@ -238,22 +236,23 @@ These are the exact values. They are written once, in `frontend/src/theme.js`, a
 | Accent | `#00F0FF` | Glow, focus rings, active navigation, key figures |
 | Text | `#F8FAFC` | Main text |
 | Muted | `#94A3B8` | Secondary text, labels, axes |
-| Emerald | `#10B981` | Operational, Approved |
-| Amber | `#F59E0B` | Maintenance Required, Pending |
-| Crimson | `#EF4444` | Decommissioned, Rejected, errors |
-| Blue | `#3B82F6` | In Transit |
+| Operational | `#10B981` | Operational, Approved |
+| Warning | `#F59E0B` | Maintenance Required, Pending |
+| Danger | `#EF4444` | Decommissioned, Rejected, errors |
+| Transit | `#3B82F6` | In Transit |
 
-Shades such as a slightly lighter surface for hover, a sunken surface for inputs, or a 14% tint behind a badge are calculated from these values in `theme.js`. They are never typed in as new hex codes.
+Shades such as a slightly lighter surface for hover, a sunken surface for inputs, or a tint behind a badge are calculated from these values with `color-mix` in the CSS. They are never typed in as new hex codes.
 
 ### Meaning of colour
 | Item | Colour |
 |---|---|
-| Asset status | Operational emerald, Maintenance Required amber, Decommissioned crimson, In Transit blue |
-| Request status | Pending amber, Approved emerald, Rejected crimson, Completed muted (a quiet, finished state) |
-| Request priority | Low muted, Normal primary, High amber, Critical crimson |
-| Roles | SuperAdmin accent, LogisticsManager primary, FieldTechnician emerald, Viewer muted |
+| Asset status | Operational green, Maintenance Required amber, In Transit blue, Decommissioned red |
+| Request status | Pending amber, Approved green, Completed cyan, Rejected red |
+| Request priority | Low muted, Normal blue, High amber, Critical red |
+| Utilisation | Blue below 70%, amber from 70%, red from 85% |
+| Audit action | Created and Approved green, Updated blue, Completed cyan, Rejected red |
 
-Colour is never the only signal. Every badge also carries its text, and every status chart bar has a label and a value.
+Colour is never the only signal. Every badge carries its text and a dot, and every chart has a legend with labels and values.
 
 ### Contrast
 Measured ratios against WCAG 2.1 (4.5 to 1 is the minimum for normal text):
@@ -265,48 +264,65 @@ Measured ratios against WCAG 2.1 (4.5 to 1 is the minimum for normal text):
 | Muted on Surface | 7.23 to 1 |
 | Accent on Surface | 13.15 to 1 |
 | Primary on Surface | 5.04 to 1 |
-| Emerald on Surface | 7.30 to 1 |
-| Amber on Surface | 8.63 to 1 |
-| Crimson on Surface | 4.92 to 1 |
+| Operational on Surface | 7.30 to 1 |
+| Warning on Surface | 8.63 to 1 |
+| Danger on Surface | 4.92 to 1 |
 | Void on Primary (button text) | 5.41 to 1 |
 
-White text on the Primary blue would only reach 3.52 to 1, so solid primary buttons use Void-coloured text instead. Borders are 1.27 to 1 against Surface. They are decoration, so no meaning depends on them.
+White text on the Primary blue would only reach 3.68 to 1, so solid primary buttons use Void-coloured text instead. Borders are 1.27 to 1 against Surface. They are decoration, so no meaning depends on them.
 
 ### Typography, space and shape
-- Inter at 14px for text, 600 weight for headings. Figures use tabular numbers so columns line up.
-- JetBrains Mono at 12.5px for asset tags, ids, times and JSON.
-- Spacing steps of 4px. Panel corners 14px. Controls 10px. Control height 38px.
-- Panels have a 1px border and a faint top highlight. Key panels have small cyan corner brackets, the one deliberate "instrument panel" flourish.
-- The page background is Void with a soft blue glow at the top left and a faint cyan glow at the bottom right, plus a fine grid that fades out toward the edges.
+- Headings use Chakra Petch. Body text uses IBM Plex Sans at 14.5px. Asset tags, ids, times and JSON use IBM Plex Mono. All three load from Google Fonts, with the system fonts (Segoe UI and similar) as the fallback.
+- Panel corners are 10px and smaller controls 7px.
+- Panels have a 1px border, a faint top highlight and small cyan corner brackets, the one deliberate "instrument panel" flourish.
+- The page background is Void with a soft blue glow at the top right, a faint cyan glow at the bottom left and a fine 44px grid.
 
 ### Motion and accessibility
-- Transitions last 120 to 250 ms. Panels rise in gently. The "Live" dot pulses. Skeletons shimmer.
-- Every animation stops when the person's system asks for reduced motion.
-- Keyboard focus shows a 2px Accent ring. Icon buttons have text labels for screen readers. Dialogs trap Escape, set `aria-modal` and name themselves. Toasts are announced politely.
-- Layout works from about 360px wide upward. Below 900px the sidebar becomes a slide-in menu and tables scroll sideways inside their panel.
+- Transitions are short. Panels rise in gently, the "Live" dot pulses, skeletons shimmer and the dashboard figures count up. Every animation stops when the person's system asks for reduced motion.
+- Keyboard focus shows a 2px Accent ring. Icon buttons have text labels for screen readers. Toasts are announced politely.
+- Layout works from about 360px wide upward (checked at phone, tablet and laptop widths).
+  - Below 960px the sidebar becomes a slide-in menu, and the menu closes after each navigation.
+  - Below 900px the login screen drops its brand panel.
+  - Tables scroll sideways inside their panel when they do not fit.
+  - Below 1440px the sidebar and the table cells get tighter so the Asset Fleet table fits at 1280px without sideways scrolling.
+  - Below 1600px the "Request move" button on an asset row shows only its truck icon, with the name as a tooltip and for screen readers.
 
 ## 10. Screens
 
-**Login.** A two-part screen: a brand panel (name, one-line purpose, three features, the "independent portfolio project, fictional data" notice) and a sign-in card. Email, password with a show toggle, a busy state, and the server's own error message. A session-expired notice appears here after an automatic logout.
+**Login.** A brand panel (name, one-line purpose, a decorative illustration of fictional sites and two short feature points, plus the "independent portfolio project, fictional data" notice) beside a sign-in card. Email, password with a show toggle, a busy state, and the server's own error message. The illustration uses fixed positions. It is not data. A session-expired notice appears here after an automatic logout.
 
-**Shell.** A sidebar with the brand, grouped navigation filtered by role, and the independent-project notice. A top bar with the page title, an API status pill from `/health`, a local clock, and a user menu showing name, role, location and Sign out.
+**Shell.** A sidebar with the brand, navigation filtered by role (Command Center, Asset Fleet, Logistics, then Audit Log and Users for a SuperAdmin), the signed-in person's name, role and location, a Sign out button and the independent-project notice. A top bar with the page title, a local clock and the API status pill.
 
-**Dashboard.**
-- Six metric cards: total assets (with how many are critical), fleet availability with a share bar, maintenance required, in transit, pending requests (with how many are High or Critical), and overdue inspections. Each links to the matching filtered list.
-- Asset status distribution: a bar chart from `/api/assets/summary`.
-- Request pipeline: a donut of requests by status, with the total in the middle.
-- Site positions: every asset that has coordinates, plotted by latitude and longitude and coloured by status, with the sites labelled. It is a plain position plot with no map tiles, so it needs no outside service.
-- Needs attention: overdue inspections, High and Critical pending requests, and critical assets under maintenance, most urgent first.
-- Recent activity: the feed from `/api/activity`.
-- Latest requests.
+**Command Center (dashboard).**
+- A "Live" bar with the time of the last refresh.
+- Six metric cards:
+  1. Total assets, with how many are operational.
+  2. Fleet availability, as a percentage (rule 12).
+  3. Critical assets at risk: critical assets, not decommissioned, that are under maintenance or overdue for inspection.
+  4. Inspections overdue, with how many more fall due within 14 days.
+  5. Pending requests, with how many are High or Critical.
+  6. Assets in transit, with how many approved moves are open.
+- Status distribution: a donut of assets by status, with the total in the middle and a legend with counts and percentages. The data comes from `/api/assets/summary`.
+- Utilisation by location: a bar chart of the average utilisation of assets in service, busiest location first, coloured by the thresholds above.
+- Recent activity: the newest 12 entries from `/api/activity`, each with an icon, the action, the record, who did it and how long ago.
+- Needs attention: at most six assets, critical assets at risk first, then other overdue or soon-due inspections. Below it, urgent requests waiting: up to four High or Critical pending requests.
 
-**Assets.** A table with search (tag, name, category, location), status filter chips with counts, a category filter, a critical-only switch, an overdue-only switch and sortable columns. Columns: asset (tag, name, category), status, location, capacity, utilization bar, next inspection, critical flag. Pages of 10, 25 or 50. A modal creates or edits an asset, sends only the fields that changed, and shows server errors under the right field. People who cannot edit open the same modal read-only. The filters live in the address bar, so links from the dashboard land on the right view.
+**Asset Fleet.** A table with search (tag, name, category, location), a location filter, status chips with counts, a "Critical only" switch and a "Clear filters" button. The Tag, Asset, Status, Location, Utilisation, Capacity and Next inspection columns sort. Pages of 12. The Asset column also shows the category and a "Critical" mark.
+- The last column holds a **Request move** button, then an edit button (view for roles that cannot edit). The button is shown to people who may raise requests, and not on decommissioned assets. It opens the new-request dialog with the asset chosen and "From" filled in, so the cursor lands in "To".
+- A dialog adds or edits an asset. It checks the same rules as the server, sends only the fields that changed (so each audit row shows exactly what was edited), and shows server errors in the dialog. People who cannot edit open the same dialog read-only.
+- The filters are not kept in the address bar. Opening the screen again starts with no filters.
 
-**Requests.** A table with status tabs and counts, a priority filter, search, and columns for id, asset, route, priority, status, requested by, schedule and actions. Action buttons appear only when both the role and the status allow them (section 11). Every status change asks for confirmation first, because Rejected and Completed cannot be undone. A modal raises a new request, with the origin filled in from the chosen asset's location.
+**Logistics (requests).** A table with status chips and counts, a priority filter, a sort (newest first, or most urgent first, which puts the oldest request first within a priority), and search over asset, route, person and request number. Pages of 10. Columns: id, asset, route, priority, status, requested by, arrival and actions.
+- Action buttons appear only when both the role and the status allow them (section 11).
+- Every status change asks for confirmation first, because Rejected and Completed cannot be undone. A 409 from the server shows its message in the confirmation and reloads the list.
+- A details dialog shows a progress stepper, the people and dates, and the notes. It offers the same actions.
+- A dialog raises a new request. Choosing an asset fills in "From" with where the asset is now. Decommissioned assets are not offered. It checks that the destination differs from the origin and that arrival is not before departure.
 
-**Audit log (SuperAdmin).** A table of entries newest first with filters for the table and the person, and previous and next paging. A banner states that the log is append-only. There are no edit or delete controls anywhere. Each row opens a field-by-field comparison of the old and new values, with the changed fields highlighted, and a raw JSON view.
+**Audit log (SuperAdmin).** A table of entries, newest first, with a record type filter and a user filter, and Previous and Next paging in pages of 25. The page says rows can never be edited or deleted, and there are no edit or delete controls. Each row opens a field-by-field comparison of the old and new values, with a switch to show unchanged fields and a raw JSON view.
 
-**Users (SuperAdmin).** A table with search and filters, a modal to create a user, and actions to change a role or deactivate and reactivate. A SuperAdmin's own row has those actions disabled, matching the server rule.
+**Users (SuperAdmin).** A table of every user with role, location, status and join date. A dropdown changes a role. A Deactivate or Reactivate button asks for confirmation. A dialog adds a user, with a password of at least 8 characters. A SuperAdmin's own row has the role dropdown and the Deactivate button disabled, matching the server rule (rule 15).
+
+**Not found.** Any unknown address shows a short "not found" page inside the shell.
 
 ## 11. Operational workflows
 
@@ -324,7 +340,7 @@ White text on the Primary blue would only reach 3.52 to 1, so solid primary butt
      +----------> Decommissioned <------+     (final: retired, never deleted)
 ```
 - A LogisticsManager or SuperAdmin sets the status by editing the asset. Any status may be chosen. Every edit is audited with the values before and after.
-- Moving an asset between locations is requested through the requests portal, not by editing its location.
+- The normal way to move an asset is a request. Completing the request changes the location (rule 8). A manager can also correct a location by editing the asset, and that edit is audited like any other.
 - Decommissioned is the end of an asset's life. It no longer counts toward availability, can no longer be moved, and is never overdue for inspection.
 
 ### Request lifecycle
@@ -336,30 +352,37 @@ White text on the Primary blue would only reach 3.52 to 1, so solid primary butt
 
 | Step | Who | Result |
 |---|---|---|
-| Raise | SuperAdmin, LogisticsManager, FieldTechnician | A Pending request, with a priority, written to the audit log |
+| Raise | SuperAdmin, LogisticsManager, FieldTechnician | A Pending request, with a priority, written to the audit log (REQUEST_CREATED) |
 | Approve | SuperAdmin, LogisticsManager | The approver is recorded. Audit entry REQUEST_APPROVED. |
 | Reject | SuperAdmin, LogisticsManager | Final. Audit entry REQUEST_REJECTED. |
-| Complete | SuperAdmin, LogisticsManager | Final, and only from Approved. Audit entry REQUEST_COMPLETED. |
+| Complete | SuperAdmin, LogisticsManager | Final, and only from Approved. Audit entry REQUEST_COMPLETED, and the asset moves to the destination (rule 8), with its own ASSET_UPDATED entry. |
 
-The interface offers only the buttons that `ALLOWED_NEXT_STATUS` permits for the request's current status and the person's role. If someone else changed the request in the meantime, the server answers 409, the interface shows that message and reloads the list.
+The interface offers only the buttons that `NEXT_STATUS` (a copy of the server's `ALLOWED_NEXT_STATUS`) permits for the request's current status and the person's role. If someone else changed the request in the meantime, the server answers 409, the interface shows that message and reloads the list.
 
 ### Priority
-A request carries a priority of Low, Normal, High or Critical. High and Critical requests that are still Pending appear in Needs attention on the dashboard and count toward the "high priority" figure on the Pending requests card.
+A request carries a priority of Low, Normal, High or Critical. High and Critical requests that are still Pending count toward the "high or critical" figure on the Pending requests card and appear under "Urgent requests waiting" on the dashboard.
 
 ### Inspection workflow
 1. Each asset has an inspection interval (default 90 days) and a last-inspected date.
 2. The next inspection is due on the last-inspected date plus the interval.
-3. Within 7 days of that date the asset shows as "due soon". After it, the asset is overdue.
-4. A LogisticsManager or SuperAdmin records an inspection by editing the asset and setting the last-inspected date. The edit is audited like any other.
+3. After that date, the asset is overdue. Within 14 days before it, the asset counts as due soon.
+4. An asset that has never been inspected is due straight away, so it counts as overdue and shows "Never inspected" (rule 11).
+5. A LogisticsManager or SuperAdmin records an inspection by editing the asset and setting the last-inspected date. The edit is audited like any other.
 
 ### Needs attention
-The dashboard lists, most urgent first: Critical pending requests, overdue inspections on critical assets, other overdue inspections, High pending requests, and critical assets under maintenance. It shows at most six items and links each to its record.
+The dashboard lists critical assets at risk first (under maintenance, or overdue for inspection), then the other assets that are overdue or due soon. It shows at most six. Below that, it lists up to four High or Critical pending requests.
 
 ### Session workflow
-Login, then `/api/auth/me`, then the dashboard. If the token expires, or the server answers 401 for any reason, the app clears the session and returns to the login page with an explanation. Signing out clears the session on purpose. Nothing needs to be revoked on the server, because tokens are short lived.
+Login, then `/api/auth/me`, then the dashboard. If the token expires, or the server answers 401 for any reason, the app clears the session and returns to the login page with an explanation. Signing out clears the session on purpose. Nothing needs to be revoked on the server, because tokens are short lived, and a deactivated user's token is refused on the next call.
 
 ### Audit workflow
 Every change writes its audit entry in the same transaction. The audit screen is read-only. The dashboard feed shows a safe summary of the same entries to every role.
+
+### Running and checking the frontend
+1. Start the backend (`python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000` in `backend`, with the virtual environment active).
+2. In `frontend`, run `npm install` once, then `npm run dev`, and open http://localhost:5173.
+3. `npm run build` checks that the whole app compiles. Backend tests run with `python -m pytest` in `backend`.
+4. The frontend has no automated tests yet (see section 13).
 
 ## 12. Decision log
 
@@ -390,7 +413,15 @@ Every change writes its audit entry in the same transaction. The audit screen is
 | 23 | Use Recharts `shape` instead of `Cell` | `Cell` is deprecated and will be removed in Recharts 4 |
 | 24 | Import the router from `react-router` | In version 7 the separate `react-router-dom` package is no longer needed |
 | 25 | Show no invented telemetry or trends | A dashboard that fakes data misleads people. Every figure comes from a table or a calculation on it. |
-| 26 | Add priority, capacity, utilization, critical flag, inspection interval and coordinates | Each one feeds a visible part of the dashboard. Nothing was added "just in case". |
+| 26 | Add priority, capacity, utilization, critical flag, inspection interval and coordinates | Each one feeds a visible part of the dashboard. Nothing was added "just in case". (Coordinates are stored and editable but not drawn yet. See section 13.) |
+| 27 | Completing a request moves the asset, in the same transaction | Otherwise the fleet shows an asset at its old site after the move is done. Approving does not move it, because the move has not happened yet. |
+| 28 | The frontend loads every page of assets and requests, then searches, filters and sorts in the browser | Results are complete and instant at this size. Server-side filtering is listed in section 13 for when the tables grow. |
+| 29 | Chakra Petch, IBM Plex Sans and IBM Plex Mono for the interface | A technical, instrument-panel look that stays readable at small sizes. System fonts are the fallback. |
+| 30 | Add a "Request move" button to each asset row | The place where someone sees the asset is the natural place to ask to move it. The dialog opens with the asset and origin filled in. |
+| 31 | An asset that has never been inspected counts as overdue | Treating "never inspected" as fine would hide the assets most in need of a look. |
+| 32 | Show a decorative illustration, not a map, on the login screen | The login screen has no data to plot, so it uses fixed fictional sites and says nothing it cannot back up (rule 14). |
+| 33 | The server stops a SuperAdmin from demoting or deactivating themselves | The last administrator must not be able to lock everyone out. The interface disables the same controls as a courtesy. |
+| 34 | Tighten the asset table on laptop screens and show only an icon on the "Request move" button below 1600px | The table must fit at 1280px without sideways scrolling. The full label returns on wide screens. |
 
 ## 13. Open questions
 
@@ -402,6 +433,12 @@ Every change writes its audit entry in the same transaction. The audit screen is
 6. **Token storage.** Move the token from `sessionStorage` to an HttpOnly cookie, which needs CSRF protection on the API.
 7. **Server-side search.** The tables search and filter in the browser over the full list. Past a few thousand rows, add `q` and `status` filters to the list endpoints.
 
+8. **Frontend tests.** The frontend is checked by building it and by hand, but has no automated tests. Add component tests for the role rules, the request actions and the forms.
+9. **Positions on screen.** Latitude and longitude are stored and can be edited, but nothing draws them. Plot them on the dashboard, or leave them for a later map?
+10. **Filters in the address bar.** Keep the Asset Fleet and Logistics filters in the URL, so a filtered view can be linked to and the dashboard cards can open a filtered list.
+11. **Completion warning.** The confirmation for "Mark completed" could say that the asset's location will change to the destination.
+12. **Hidden screens.** A person who types the address of a screen they may not open is sent to the dashboard. Show a "Not allowed" message instead?
+
 ## 14. Out of scope for now
 
 These are stretch goals. Build the core first.
@@ -410,4 +447,5 @@ These are stretch goals. Build the core first.
 - Offline mode for field technicians
 - Converting the frontend to TypeScript, after the first version works
 - Street-level maps with tiles
+- Plotting asset coordinates on a map or position chart (see open question 9)
 - Light theme
