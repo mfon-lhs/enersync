@@ -1,5 +1,7 @@
 # Enersync
 
+[![CI](https://github.com/mfon-lhs/enersync/actions/workflows/ci.yml/badge.svg)](https://github.com/mfon-lhs/enersync/actions/workflows/ci.yml)
+
 An independent portfolio project: a tracker for energy-operations assets and logistics requests.
 It is not affiliated with any company. All data is fictional.
 

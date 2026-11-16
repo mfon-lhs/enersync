@@ -1,0 +1,124 @@
+name: CI
+
+# Runs on every push to any branch, and on pull requests.
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch cancels the older, unfinished run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (ruff and pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # A throwaway PostgreSQL for the tests. The tests only touch a database
+    # called enersync_test, so that is the one we create here.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: enersync
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: enersync_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U enersync -d enersync_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://enersync:ci-password@localhost:5432/enersync_test
+      JWT_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      PGPASSWORD: ci-password
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install packages
+        run: |
+          sed -i '1s/^\xEF\xBB\xBF//' requirements.txt
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint with ruff
+        run: ruff check . --line-length 110 --select E,F,I
+
+      - name: Create the tables in the test database
+        run: psql -h localhost -U enersync -d enersync_test -v ON_ERROR_STOP=1 -f ../database/schema.sql
+
+      - name: Run the tests
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend (tests and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install packages
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Run the tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: Docker (build and start)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The example file holds placeholder values, which is fine for a throwaway run.
+      - name: Build the images
+        run: docker compose --env-file .env.example build
+
+      - name: Start everything and wait until it is healthy
+        run: docker compose --env-file .env.example up -d --wait --wait-timeout 180
+
+      - name: Check the API and the web app answer
+        run: |
+          curl --fail --silent --show-error http://localhost:8000/health
+          curl --fail --silent --show-error --output /dev/null http://localhost:5173/
+
+      - name: Show the logs if something went wrong
+        if: failure()
+        run: docker compose --env-file .env.example logs
+
+      - name: Stop everything
+        if: always()
+        run: docker compose --env-file .env.example down -v
