@@ -1,3 +1,5 @@
+from app.core.config import parse_origins
+
 WEB_APP = "http://localhost:5173"
 WEB_APP_BY_IP = "http://127.0.0.1:5173"
 
@@ -46,3 +48,12 @@ def test_the_total_count_header_can_be_read_by_the_web_app(client, auth_headers)
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == WEB_APP
     assert "x-total-count" in response.headers["access-control-expose-headers"].lower()
+
+
+def test_parse_origins_cleans_up_the_setting():
+    assert parse_origins("") == []
+    assert parse_origins("https://a.example.com") == ["https://a.example.com"]
+    assert parse_origins(" https://a.example.com/ , ,https://b.example.com ") == [
+        "https://a.example.com",
+        "https://b.example.com",
+    ]

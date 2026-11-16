@@ -418,7 +418,7 @@ Things to know:
 - The database password should use letters and numbers only, because it is placed inside a connection address.
 - Ports 5173, 8000 and 5433 must be free. Stop `npm run dev` and `uvicorn` first.
 - The API address is fixed into the web app when it is built (`VITE_API_URL`). Changing it needs `docker compose up --build`.
-- The API only accepts browser requests from http://localhost:5173 and http://127.0.0.1:5173. This list is written in `backend/app/main.py`, and must come from a setting before deployment (open question 13).
+- The API always accepts browser requests from http://localhost:5173 and http://127.0.0.1:5173. Other web addresses, such as a hosted web app, are added with the `CORS_ORIGINS` setting (decision 43).
 
 ## 12. Decision log
 
@@ -466,6 +466,7 @@ Things to know:
 | 40 | Use Python 3.12 in the backend image | It is a stable, widely supported version, and nothing in the project needs anything newer. The local install stays on 3.15.2. This settles former open question 1. |
 | 41 | Serve the built web app with nginx and give the API address at build time | The browser needs only static files. nginx sends unknown addresses to `index.html` so refreshing a screen such as `/assets` works. Vite writes the API address into the files when built. |
 | 42 | Keep secrets in a git-ignored `.env`, and fail with a clear message if one is missing | `.env.example` shows the names. Compose refuses to start without the password and the secret key, rather than starting with a weak default. |
+| 43 | Read extra allowed web addresses from a `CORS_ORIGINS` setting | The hosted web app has a different address from the local one. The two local addresses stay allowed, so local work and Docker need no setting. Anything not listed is still refused. |
 
 ## 13. Open questions
 
@@ -482,7 +483,7 @@ Things to know:
 10. **Filters in the address bar.** Keep the Asset Fleet and Logistics filters in the URL, so a filtered view can be linked to and the dashboard cards can open a filtered list.
 11. **Completion warning.** The confirmation for "Mark completed" could say that the asset's location will change to the destination.
 12. **Hidden screens.** A person who types the address of a screen they may not open is sent to the dashboard. Show a "Not allowed" message instead?
-13. **Allowed origins for deployment.** The API's browser origins are fixed in `backend/app/main.py`. Read them from a setting, such as `CORS_ORIGINS`, before the demo is hosted.
+13. ~~**Allowed origins for deployment.**~~ Settled: the `CORS_ORIGINS` setting (decision 43).
 
 ## 14. Out of scope for now
 

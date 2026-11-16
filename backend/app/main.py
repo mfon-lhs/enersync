@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
+from app.core.config import parse_origins, settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
 from app.core.security import create_access_token, hash_password, verify_password
@@ -20,9 +21,11 @@ from app.schemas.user import UserCreate, UserRead, UserUpdate
 
 app = FastAPI(title="Enersync API", version="0.2.0")
 
-# The web pages that may call this API from a browser: the Vite development server.
+# The web pages that may call this API from a browser: the local web app (Vite or Docker), plus any
+# addresses listed in the CORS_ORIGINS setting, such as the hosted web app.
 # A browser refuses to let any other page read the answers, even if it knows this API's address.
-ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+LOCAL_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+ALLOWED_ORIGINS = LOCAL_ORIGINS + [o for o in parse_origins(settings.cors_origins) if o not in LOCAL_ORIGINS]
 
 app.add_middleware(
     CORSMiddleware,
