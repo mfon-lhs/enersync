@@ -1,6 +1,6 @@
 # Enersync: Design Notes
 
-Last updated: 2026-11-15
+Last updated: 2026-11-16
 
 ## 1. What Enersync does
 
@@ -138,8 +138,8 @@ All endpoints start with `/api`, except `/health`. The last column lists the rol
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Backend | Python with FastAPI | Local install is Python 3.15.2. The Docker image uses 3.12 for now (see open questions). |
-| Database | PostgreSQL | Local install is version 18. Docker uses 16 until week 7, then switches to 18. |
+| Backend | Python with FastAPI | Local install is Python 3.15.2. The Docker image uses Python 3.12 (decision 40). |
+| Database | PostgreSQL | Local install is version 18. Docker uses `postgres:18-alpine`, so both match. |
 | Database access | SQLAlchemy with the psycopg driver | Connection string starts with `postgresql+psycopg://` |
 | Login tokens | JWT, valid for 60 minutes | The lifetime is set in `.env`. A token must carry both `sub` and `exp`. |
 | Password hashing | bcrypt | |
@@ -149,7 +149,7 @@ All endpoints start with `/api`, except `/health`. The last column lists the rol
 | Icons | Lucide (`lucide-react`) | |
 | Styling | Plain CSS and one theme file | No Tailwind and no component kit. |
 | Fonts | Chakra Petch for headings, IBM Plex Sans for text, IBM Plex Mono for tags, ids and JSON | Loaded from Google Fonts, with system fonts as a fallback. |
-| Containers | Docker Compose | Week 7 |
+| Containers | Docker Compose | Three services: database, API and web app (section 11, "Running with Docker"). The web app image is built with Node 24 and served by nginx. |
 | Continuous integration | GitHub Actions | Week 7. Runs tests and the linter on every push. |
 
 ## 8. Frontend architecture
@@ -399,6 +399,27 @@ Tests sit next to the file they check, named `*.test.js` or `*.test.jsx`.
 
 Pressing Tab to stay inside a dialog is not tested, because the simulated browser cannot measure layout. It is checked by hand in Chrome. The page screens (Assets, Requests, Users, Audit log) are also checked by hand for now.
 
+### Running with Docker
+Docker Compose runs the whole project with one command. Nothing else needs to be installed except Docker Desktop.
+
+| Service | Image | Address on your computer |
+|---|---|---|
+| `db` | `postgres:18-alpine` | `localhost:5433` (for pgAdmin; 5433 avoids clashing with a local PostgreSQL on 5432) |
+| `backend` | Built from `backend/Dockerfile` (Python 3.12) | http://localhost:8000, with docs at `/docs` |
+| `frontend` | Built from `frontend/Dockerfile`, served by nginx | http://localhost:5173 |
+
+1. Copy `.env.example` to `.env` and fill in the three values. `.env` is never committed.
+2. Run `docker compose up --build`. The first run downloads the base images.
+3. In a second terminal, run `docker compose exec backend python -m scripts.set_demo_passwords` once, to choose the demo passwords.
+4. Stop with Ctrl + C or `docker compose down`. `docker compose down -v` also deletes the database, so the next start begins fresh.
+
+Things to know:
+- The database is created from `database/schema.sql` then `database/demo_data.sql`, mounted as `01-schema.sql` and `02-demo-data.sql`. PostgreSQL runs these only when its data volume is empty, in name order, so the numbers matter. To reload them, run `docker compose down -v`.
+- The database password should use letters and numbers only, because it is placed inside a connection address.
+- Ports 5173, 8000 and 5433 must be free. Stop `npm run dev` and `uvicorn` first.
+- The API address is fixed into the web app when it is built (`VITE_API_URL`). Changing it needs `docker compose up --build`.
+- The API only accepts browser requests from http://localhost:5173 and http://127.0.0.1:5173. This list is written in `backend/app/main.py`, and must come from a setting before deployment (open question 13).
+
 ## 12. Decision log
 
 | # | Decision | Reason |
@@ -439,10 +460,16 @@ Pressing Tab to stay inside a dialog is not tested, because the simulated browse
 | 34 | Tighten the asset table on laptop screens and show only an icon on the "Request move" button below 1600px | The table must fit at 1280px without sideways scrolling. The full label returns on wide screens. |
 | 35 | Turn table rows into cards on phones | A wide table on a phone hides its status and action buttons off-screen. Cards keep every value and button in view without sideways scrolling. |
 | 36 | Test the frontend with Vitest and Testing Library | They are the standard pair for Vite and React projects, and tests run in a simulated browser so `npm test` is fast and needs no open browser. Tests cover rules and behaviour, not styling. |
+| 37 | Run the database, API and web app together with Docker Compose | One command starts everything, so a reviewer needs only Docker. The API waits for a healthy database, and the web app waits for a healthy API. |
+| 38 | Use `postgres:18-alpine` with a named volume mounted at `/var/lib/postgresql` | It matches the local version 18. From version 18 the image stores data in a version folder under that path, so the volume goes one level higher. |
+| 39 | Create the demo database from two start-up scripts, and choose passwords by hand | The schema and demo data load on the first start only. Demo users get a placeholder hash, so no password is stored in the repository. `set_demo_passwords` sets real ones. |
+| 40 | Use Python 3.12 in the backend image | It is a stable, widely supported version, and nothing in the project needs anything newer. The local install stays on 3.15.2. This settles former open question 1. |
+| 41 | Serve the built web app with nginx and give the API address at build time | The browser needs only static files. nginx sends unknown addresses to `index.html` so refreshing a screen such as `/assets` works. Vite writes the API address into the files when built. |
+| 42 | Keep secrets in a git-ignored `.env`, and fail with a clear message if one is missing | `.env.example` shows the names. Compose refuses to start without the password and the secret key, rather than starting with a weak default. |
 
 ## 13. Open questions
 
-1. **Python version in Docker.** Use 3.12, as planned, or 3.15 to match the local install?
+1. ~~**Python version in Docker.**~~ Settled: 3.12 (decision 40).
 2. **Maintenance requests.** The schema models only moves between locations. Should requests also cover maintenance? That would need a `request_type` column.
 3. **Database enforcement of the audit log.** Should the database itself block changes to `audit_logs`?
 4. **Demo hosting.** A free host, or Azure? Decide in week 8.
@@ -455,6 +482,7 @@ Pressing Tab to stay inside a dialog is not tested, because the simulated browse
 10. **Filters in the address bar.** Keep the Asset Fleet and Logistics filters in the URL, so a filtered view can be linked to and the dashboard cards can open a filtered list.
 11. **Completion warning.** The confirmation for "Mark completed" could say that the asset's location will change to the destination.
 12. **Hidden screens.** A person who types the address of a screen they may not open is sent to the dashboard. Show a "Not allowed" message instead?
+13. **Allowed origins for deployment.** The API's browser origins are fixed in `backend/app/main.py`. Read them from a setting, such as `CORS_ORIGINS`, before the demo is hosted.
 
 ## 14. Out of scope for now
 
