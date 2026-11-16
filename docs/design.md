@@ -150,7 +150,8 @@ All endpoints start with `/api`, except `/health`. The last column lists the rol
 | Styling | Plain CSS and one theme file | No Tailwind and no component kit. |
 | Fonts | Chakra Petch for headings, IBM Plex Sans for text, IBM Plex Mono for tags, ids and JSON | Loaded from Google Fonts, with system fonts as a fallback. |
 | Containers | Docker Compose | Three services: database, API and web app (section 11, "Running with Docker"). The web app image is built with Node 24 and served by nginx. |
-| Continuous integration | GitHub Actions | Week 7. Runs tests and the linter on every push. |
+| Continuous integration | GitHub Actions | On every push: ruff and pytest for the API, Vitest and a build for the web app, and a Docker build and start-up check. |
+| Hosting | Render (API and web app) and Neon (database) | Free plans. The database and the API are in Frankfurt. See "Deployment" in section 11. |
 
 ## 8. Frontend architecture
 
@@ -420,6 +421,24 @@ Things to know:
 - The API address is fixed into the web app when it is built (`VITE_API_URL`). Changing it needs `docker compose up --build`.
 - The API always accepts browser requests from http://localhost:5173 and http://127.0.0.1:5173. Other web addresses, such as a hosted web app, are added with the `CORS_ORIGINS` setting (decision 43).
 
+### Deployment
+The demo runs online on free plans. A push to `main` rebuilds the API and the web app by itself.
+
+| Part | Where | Settings |
+|---|---|---|
+| Database | Neon, project in Frankfurt, `production` branch | Tables and demo data were loaded by running `schema.sql` then `demo_data.sql` in Neon's SQL Editor. |
+| API | Render web service `enersync-api`, Docker, Frankfurt | Root directory `backend`. Health check path `/health`. Environment: `DATABASE_URL`, `JWT_SECRET_KEY`, `PORT=8000`, `CORS_ORIGINS`. |
+| Web app | Render static site `enersync-web` | Root directory `frontend`. Build command `npm install && npm run build`. Publish directory `dist`. Environment: `VITE_API_URL`. A rewrite rule sends `/*` to `/index.html`. |
+
+Things to know:
+- `DATABASE_URL` is Neon's direct connection string (pooling off), with its start changed to `postgresql+psycopg://`. It includes `sslmode=require`.
+- `JWT_SECRET_KEY` online is a different value from the one used locally. Secrets live only in Render's environment settings and in the git-ignored `.env`, never in the repository.
+- `CORS_ORIGINS` must equal the web app's address exactly, with `https://` and no trailing slash.
+- `VITE_API_URL` is written into the web app when it is built. Changing it needs a new build.
+- The free API sleeps after 15 minutes without traffic, and takes about a minute to wake. While it wakes, a browser may show a CORS error, because the waking server sends an error page with no CORS header. Open `/health` and retry.
+- A change to the tables is applied online by running the new numbered file from `database/migrations/` in Neon's SQL Editor.
+- The demo passwords are set with `python -m scripts.set_demo_passwords` while the `DATABASE_URL` environment variable points at Neon. Remove the variable afterwards. The demo password is a throwaway, chosen for this fictional data.
+
 ## 12. Decision log
 
 | # | Decision | Reason |
@@ -467,13 +486,17 @@ Things to know:
 | 41 | Serve the built web app with nginx and give the API address at build time | The browser needs only static files. nginx sends unknown addresses to `index.html` so refreshing a screen such as `/assets` works. Vite writes the API address into the files when built. |
 | 42 | Keep secrets in a git-ignored `.env`, and fail with a clear message if one is missing | `.env.example` shows the names. Compose refuses to start without the password and the secret key, rather than starting with a weak default. |
 | 43 | Read extra allowed web addresses from a `CORS_ORIGINS` setting | The hosted web app has a different address from the local one. The two local addresses stay allowed, so local work and Docker need no setting. Anything not listed is still refused. |
+| 44 | Host the demo on Render and Neon, both in Frankfurt | Both have free plans and need no payment card to start. Render runs the Docker image already built for Compose. Render's own free database is deleted after 30 days, and Neon's is not, so the database lives on Neon. |
+| 45 | Serve the web app as a Render static site, not as the nginx image | It is only static files, and a static site never sleeps. The API address is written in at build time, and a rewrite rule makes refreshing a screen work. |
+| 46 | Use Neon's direct connection with SSL | It avoids connection-pool quirks with the driver. The address needs the `postgresql+psycopg://` start. |
+| 47 | Accept the free API's sleep for the demo | It costs nothing and is fine for a portfolio. The first request after a pause takes about a minute. A paid always-on plan is the upgrade (open question 14). |
 
 ## 13. Open questions
 
 1. ~~**Python version in Docker.**~~ Settled: 3.12 (decision 40).
 2. **Maintenance requests.** The schema models only moves between locations. Should requests also cover maintenance? That would need a `request_type` column.
 3. **Database enforcement of the audit log.** Should the database itself block changes to `audit_logs`?
-4. **Demo hosting.** A free host, or Azure? Decide in week 8.
+4. ~~**Demo hosting.**~~ Settled: Render and Neon on free plans (decision 44).
 5. **Approved means in transit?** Should approving a request set the asset to InTransit? It is simple, but an asset can have several approved requests at once, so the rule would need a way to decide when it returns to Operational. For now only Completed changes the asset (rule 8 in section 5).
 6. **Token storage.** Move the token from `sessionStorage` to an HttpOnly cookie, which needs CSRF protection on the API.
 7. **Server-side search.** The tables search and filter in the browser over the full list. Past a few thousand rows, add `q` and `status` filters to the list endpoints.
@@ -484,6 +507,7 @@ Things to know:
 11. **Completion warning.** The confirmation for "Mark completed" could say that the asset's location will change to the destination.
 12. **Hidden screens.** A person who types the address of a screen they may not open is sent to the dashboard. Show a "Not allowed" message instead?
 13. ~~**Allowed origins for deployment.**~~ Settled: the `CORS_ORIGINS` setting (decision 43).
+14. **Always-on demo.** Keep the free API that sleeps, or pay a few dollars a month so the first visit is never slow?
 
 ## 14. Out of scope for now
 

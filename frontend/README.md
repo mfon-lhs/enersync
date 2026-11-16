@@ -12,7 +12,7 @@ Enersync is an independent portfolio project. It is not affiliated with any ener
    `npm run dev`
 3. Open http://localhost:5173
 
-The backend allows calls only from `http://localhost:5173` and `http://127.0.0.1:5173`, so the dev server is set to keep exactly port 5173.
+The backend always allows calls from `http://localhost:5173` and `http://127.0.0.1:5173`, so the dev server is set to keep exactly port 5173. Other web addresses are added with the backend's `CORS_ORIGINS` setting.
 
 ## Run the tests
 
@@ -37,4 +37,4 @@ Tests sit next to the file they check and are named `*.test.js` or `*.test.jsx`.
 
 ## If the backend is somewhere else
 
-Copy `.env.example` to `.env` and change `VITE_API_URL`. The backend must also allow that origin (CORS).
+Copy `.env.example` to `.env` and change `VITE_API_URL`. The backend must also allow that origin (CORS), by listing it in `CORS_ORIGINS`.
